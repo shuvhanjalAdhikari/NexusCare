@@ -18,7 +18,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 
 if TYPE_CHECKING:
-    from app.models.user import User
+    from app.models.membership import HospitalMembership
     from app.models.doctor import Department
 
 
@@ -27,7 +27,7 @@ if TYPE_CHECKING:
 # ----------------------------------------------------------------
 
 class Hospital(Base):
-    """Top-level tenant. Every piece of data belongs to exactly one hospital."""
+    """Top-level tenant. Every piece of clinical data belongs to exactly one hospital."""
 
     __tablename__ = "hospitals"
 
@@ -45,9 +45,13 @@ class Hospital(Base):
     updated_at: Mapped[datetime] = mapped_column(TIMESTAMPTZ, nullable=False, server_default="now()")
 
     # Relationships
+    memberships: Mapped[list[HospitalMembership]] = relationship(
+        "HospitalMembership", back_populates="hospital", cascade="all, delete-orphan"
+    )
     roles: Mapped[list[Role]] = relationship("Role", back_populates="hospital")
-    users: Mapped[list[User]] = relationship("User", back_populates="hospital", cascade="all, delete-orphan")
-    departments: Mapped[list[Department]] = relationship("Department", back_populates="hospital", cascade="all, delete-orphan")
+    departments: Mapped[list[Department]] = relationship(
+        "Department", back_populates="hospital", cascade="all, delete-orphan"
+    )
 
 
 # ----------------------------------------------------------------
@@ -75,7 +79,9 @@ class Role(Base):
 
     # Relationships
     hospital: Mapped[Optional[Hospital]] = relationship("Hospital", back_populates="roles")
-    users: Mapped[list[User]] = relationship("User", back_populates="role")
+    memberships: Mapped[list[HospitalMembership]] = relationship(
+        "HospitalMembership", back_populates="role"
+    )
     permissions: Mapped[list[Permission]] = relationship(
         "Permission", secondary="role_permissions", back_populates="roles"
     )

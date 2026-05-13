@@ -6,6 +6,7 @@
 
 from app.models.hospital import Hospital, Role, Permission, RolePermission
 from app.models.user import User
+from app.models.membership import HospitalMembership
 from app.models.patient import Patient, PatientAllergy
 from app.models.doctor import (
     Department,
@@ -33,6 +34,7 @@ from app.models.audit import AuditLog
 __all__ = [
     "Hospital", "Role", "Permission", "RolePermission",
     "User",
+    "HospitalMembership",
     "Patient", "PatientAllergy",
     "Department", "DoctorProfile", "DoctorSchedule", "DoctorLeave", "DoctorScheduleOverride",
     "Appointment", "OPDQueue",

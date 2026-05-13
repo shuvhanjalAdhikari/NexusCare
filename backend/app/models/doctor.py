@@ -55,15 +55,19 @@ class Department(Base):
 
 class DoctorProfile(Base):
     """
-    Extended profile for a user with role=doctor.
-    One-to-one with User; user_id is unique.
+    Extended profile for a doctor at a specific hospital.
+    Unique per (user_id, hospital_id) — a doctor working at two hospitals
+    has two separate profiles (different fee, schedule, license per hospital).
     """
 
     __tablename__ = "doctor_profiles"
+    __table_args__ = (
+        UniqueConstraint("user_id", "hospital_id", name="uq_doctor_profile_user_hospital"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
     hospital_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("hospitals.id", ondelete="CASCADE"), nullable=False, index=True
@@ -81,7 +85,7 @@ class DoctorProfile(Base):
     updated_at: Mapped[datetime] = mapped_column(TIMESTAMPTZ, nullable=False, server_default="now()")
 
     # Relationships
-    user: Mapped[User] = relationship("User", back_populates="doctor_profile")
+    user: Mapped[User] = relationship("User", back_populates="doctor_profiles")
     department: Mapped[Optional[Department]] = relationship("Department", back_populates="doctors")
     schedules: Mapped[list[DoctorSchedule]] = relationship(
         "DoctorSchedule", back_populates="doctor", cascade="all, delete-orphan"
@@ -152,6 +156,9 @@ class DoctorLeave(Base):
     status: Mapped[str] = mapped_column(String(20), nullable=False, server_default="pending")
     approved_by: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    approved_by_membership_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("hospital_memberships.id"), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(TIMESTAMPTZ, nullable=False, server_default="now()")
     updated_at: Mapped[datetime] = mapped_column(TIMESTAMPTZ, nullable=False, server_default="now()")

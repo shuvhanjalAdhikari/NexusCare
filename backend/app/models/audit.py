@@ -23,6 +23,8 @@ class AuditLog(Base):
     Append-only record of every create/update/delete/login action in the system.
     No updated_at — rows are never modified after insertion.
     ip_address uses PostgreSQL INET type (stored as str in Python).
+    membership_id captures which role-at-which-hospital the action was taken under;
+    NULL for system-initiated actions with no user context.
     """
 
     __tablename__ = "audit_logs"
@@ -33,6 +35,9 @@ class AuditLog(Base):
     )
     user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    membership_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("hospital_memberships.id"), nullable=True
     )
     action: Mapped[str] = mapped_column(String(50), nullable=False)
     resource_type: Mapped[str] = mapped_column(String(80), nullable=False)
