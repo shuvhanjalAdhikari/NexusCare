@@ -10,7 +10,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING, Optional
 
-from sqlalchemy import Boolean, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import TIMESTAMP, UUID
 
 TIMESTAMPTZ = TIMESTAMP(timezone=True)
@@ -44,6 +44,10 @@ class User(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
     email_verified_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMPTZ, nullable=True)
     last_login_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMPTZ, nullable=True)
+    failed_login_attempts: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="0"
+    )
+    locked_until: Mapped[Optional[datetime]] = mapped_column(TIMESTAMPTZ, nullable=True)
     deleted_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMPTZ, nullable=True)
     created_at: Mapped[datetime] = mapped_column(TIMESTAMPTZ, nullable=False, server_default="now()")
     updated_at: Mapped[datetime] = mapped_column(TIMESTAMPTZ, nullable=False, server_default="now()")

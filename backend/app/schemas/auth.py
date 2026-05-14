@@ -5,7 +5,7 @@
 
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 
 # ----------------------------------------------------------------
@@ -15,7 +15,9 @@ from pydantic import BaseModel, ConfigDict, Field
 class LoginRequest(BaseModel):
     """Step 1: authenticate user. Returns selection token + memberships."""
 
-    email: str = Field(min_length=3, max_length=150)
+    # max_length is belt-and-suspenders: EmailStr does the RFC validation,
+    # but the explicit bound stops absurdly long strings before the validator runs.
+    email: EmailStr = Field(max_length=150)
     password: str = Field(min_length=1)
 
 

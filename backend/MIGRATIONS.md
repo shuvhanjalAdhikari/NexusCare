@@ -190,3 +190,90 @@ Alembic reads `DATABASE_URL` from `../.env` (one level above `backend/`) via
 `alembic/env.py` normalises the scheme automatically.
 
 Do not set `sqlalchemy.url` in `alembic.ini`. It is intentionally blank.
+
+---
+
+## Known Issue: Index/Constraint Naming Drift
+
+**Every `alembic revision --autogenerate` run currently produces a flood of spurious
+index/constraint diffs that must be stripped from the generated migration before it
+is applied.** This is a known limitation and is tracked for a dedicated cleanup
+phase (Phase 4.6 — "Align ORM and SQL naming conventions").
+
+### Why this happens
+
+`01_schema.sql` is the authoritative DDL and uses PostgreSQL-style names:
+
+- Indexes named `idx_<table>_<purpose>` (e.g., `idx_users_deleted`, `idx_appointments_doctor_date`)
+- Unique constraints with the implicit `_key` suffix (e.g., `patients_hospital_id_patient_number_key`)
+
+The SQLAlchemy models, on the other hand, do not emit names that match. They use:
+
+- `index=True` on FK columns, which makes SQLAlchemy auto-generate `ix_<table>_<column>` names
+- `UniqueConstraint(..., name="uq_*")` in `__table_args__` for composite uniqueness
+
+When autogenerate diffs the two, it sees mismatched names and proposes to drop the
+SQL-named objects and recreate them under model-named ones. **None of that is what
+we actually want** — the underlying objects are correct; only the names differ.
+
+### Objects affected by the drift
+
+- **Partial soft-delete indexes** — `idx_users_deleted`, `idx_patients_deleted`,
+  `idx_appointments_deleted`, `idx_visits_deleted`, `idx_invoices_deleted`,
+  `idx_memberships_deleted`. Autogenerate proposes to drop these and cannot
+  recreate them (it has no way to express the `WHERE deleted_at IS NULL` clause
+  from the models).
+- **Composite indexes that the models cannot express via `index=True`** — e.g.,
+  `idx_appointments_doctor_date` on `(doctor_id, scheduled_at)`,
+  `idx_audit_logs_resource` on `(resource_type, resource_id)`,
+  `idx_attachments_entity` on `(entity_type, entity_id)`,
+  `idx_opd_queue_hospital_date`, `idx_notifications_user`, `idx_invoices_patient`,
+  `idx_visits_doctor`, `idx_visits_patient`, `idx_prescriptions_visit`,
+  `idx_lab_orders_visit`. Autogenerate proposes to drop these and replace them
+  with single-column indexes — a real performance regression.
+- **Unique constraint name mismatches** — e.g.,
+  `patients_hospital_id_patient_number_key` ↔ `uq_patient_hospital_number`,
+  `hospital_memberships_user_id_hospital_id_key` ↔ `uq_membership_user_hospital`,
+  `doctor_profiles_user_id_hospital_id_key` ↔ `uq_doctor_profile_user_hospital`,
+  `doctor_schedule_overrides_doctor_id_override_date_key` ↔ `uq_doctor_override_date`.
+  Pure cosmetic churn that would rewrite every constraint at no functional benefit.
+- **Auto-emitted single-column indexes on every `hospital_id` and FK column** — the
+  models declare `index=True` on those columns, but the SQL schema has either
+  composite indexes or no index at all in those positions. Autogenerate proposes
+  to add the missing single-column ones, which then duplicate coverage already
+  provided by composite indexes (e.g., the leading column of
+  `idx_appointments_doctor_date` already indexes `doctor_id` alone).
+
+### The rule
+
+**Every autogenerate run MUST be reviewed and naming-drift diffs stripped out before
+the migration is applied.** Only keep the operations that correspond to the actual
+schema change you intended (new columns, new tables, type changes, dropped columns,
+etc.). Delete everything else from both `upgrade()` and `downgrade()`.
+
+If you accidentally apply a migration containing the drift diffs, you will lose
+production-critical partial and composite indexes. There is no automated guardrail
+against this — review is the only defense.
+
+### Reference: this phase
+
+Phase 4.5 (lockout columns) is the first migration to run into this issue. The
+generated file contained ~100 lines of drift diffs; only the 2 `add_column` calls
+were kept. See
+`alembic/versions/20260514_1457_245cc2858f27_add_user_lockout_columns.py` for the
+shape of a correctly-pruned migration.
+
+### Future fix (Phase 4.6)
+
+Two reasonable resolutions, neither attempted yet:
+
+1. **Rename indexes in `01_schema.sql`** to match SQLAlchemy's `ix_*`/`uq_*`
+   conventions, and either drop the redundant single-column FK indexes (where a
+   composite already covers them) or accept the duplication.
+2. **Declare the partial and composite indexes explicitly in the models** via
+   `__table_args__` with `Index(..., postgresql_where=...)`, and align unique
+   constraint names. This keeps `01_schema.sql` authoritative for fresh DB
+   bootstrap but lets autogenerate diff cleanly thereafter.
+
+Option 2 is preferred — it keeps the SQL source-of-truth readable while making
+autogenerate trustworthy.

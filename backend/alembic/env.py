@@ -1,3 +1,14 @@
+# TODO (Phase 4.6 — Index/Constraint Naming Alignment):
+# Autogenerate currently produces ~100 lines of spurious index/constraint diffs
+# on every run because 01_schema.sql uses idx_*/*_key naming while the models
+# emit ix_*/uq_* names. Until the alignment work lands, EVERY generated
+# migration must be hand-pruned to strip these false-positive diffs. See
+# MIGRATIONS.md → "Known Issue: Index/Constraint Naming Drift" for the rule and
+# the affected object list. Disabling compare_indexes here is not a fix —
+# it would silence legitimate index changes too. The right fix is to align the
+# names; this comment exists to remind the next migrator why their autogen
+# output looks alarming.
+
 import asyncio
 import sys
 import os
