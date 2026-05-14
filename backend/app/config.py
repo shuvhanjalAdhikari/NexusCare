@@ -1,4 +1,11 @@
+from pathlib import Path
 from pydantic_settings import BaseSettings
+
+# Resolve .env relative to this file so the path is correct regardless of
+# which directory the process is launched from (app server, alembic, tests).
+_ENV_FILE = Path(__file__).parent.parent.parent / ".env"
+
+
 class Settings(BaseSettings):
     db_host: str
     db_port: int
@@ -9,6 +16,9 @@ class Settings(BaseSettings):
     secret_key: str = "change-this-in-production"
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 480
+
     class Config:
-        env_file = "../.env"
+        env_file = str(_ENV_FILE)
+
+
 settings = Settings()
