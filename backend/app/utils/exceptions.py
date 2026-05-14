@@ -320,3 +320,30 @@ class InvoiceAlreadyPaidError(ConflictError):
         super().__init__(
             message="This invoice has already been paid and cannot be modified."
         )
+
+
+class InvalidInviteTokenError(UnauthorizedError):
+    """Raised when an invite token is missing, expired, malformed, or the wrong type."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            message="This invitation link is invalid or has expired."
+        )
+
+
+class InvalidResetTokenError(UnauthorizedError):
+    """Raised when a password-reset token is missing, expired, malformed, or the wrong type."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            message="This password reset link is invalid or has expired."
+        )
+
+
+class EmailAlreadyInHospitalError(ConflictError):
+    """Raised when inviting an email that already has an active membership in this hospital."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            message="A user with this email is already a member of this hospital."
+        )

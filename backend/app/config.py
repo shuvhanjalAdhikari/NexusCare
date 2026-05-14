@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 480
     selection_token_expire_minutes: int = 5
+    invite_token_expire_minutes: int = 60 * 24 * 7  # 7 days
+    password_reset_token_expire_minutes: int = 60   # 1 hour
 
     class Config:
         env_file = str(_ENV_FILE)

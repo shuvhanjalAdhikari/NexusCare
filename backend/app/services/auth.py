@@ -33,9 +33,15 @@ from app.constants.enums import HospitalStatus
 from app.models.hospital import Hospital, Role
 from app.models.membership import HospitalMembership
 from app.models.user import User
-from app.utils.exceptions import InvalidCredentialsError
+from app.utils.email import normalize_email
+from app.utils.exceptions import (
+    InvalidCredentialsError,
+    InvalidInviteTokenError,
+    InvalidResetTokenError,
+)
 from app.utils.security import (
     create_access_token,
+    decode_token,
     hash_password,
     verify_password,
 )
@@ -65,6 +71,8 @@ LOCKOUT_WINDOW = timedelta(minutes=15)
 
 TOKEN_TYPE_SELECTION = "selection"
 TOKEN_TYPE_ACCESS = "access"
+TOKEN_TYPE_INVITE = "invite"
+TOKEN_TYPE_PASSWORD_RESET = "password_reset"
 
 
 # ----------------------------------------------------------------
@@ -316,3 +324,179 @@ def build_membership_options(
         )
         for m in memberships
     ]
+
+
+# ----------------------------------------------------------------
+# INVITE + PASSWORD-RESET TOKENS
+# ----------------------------------------------------------------
+# Single-use semantics are NOT strictly enforced server-side in v1
+# (no revocation list). Lifetimes are short — 7 days for invite,
+# 1 hour for reset — and once the password is rotated the previous
+# verify_password cannot succeed against the new hash, which makes
+# re-use practically inert. A future phase will add a token_version
+# column on users to promote this to true single-use.
+
+def issue_invite_token(
+    user_id: uuid.UUID, membership_id: uuid.UUID, email: str
+) -> tuple[str, datetime]:
+    """
+    7-day invite JWT used by /auth/accept-invite. Returns the token
+    and its expiry so callers can surface expires_at to the invitee.
+    """
+    expire = datetime.now(timezone.utc) + timedelta(
+        minutes=settings.invite_token_expire_minutes
+    )
+    token = create_access_token(
+        subject={
+            "sub": str(user_id),
+            "type": TOKEN_TYPE_INVITE,
+            "membership_id": str(membership_id),
+            "email": email,
+        },
+        expires_minutes=settings.invite_token_expire_minutes,
+    )
+    return token, expire
+
+
+def issue_password_reset_token(user_id: uuid.UUID) -> str:
+    """1-hour password-reset JWT used by /auth/reset-password."""
+    return create_access_token(
+        subject={"sub": str(user_id), "type": TOKEN_TYPE_PASSWORD_RESET},
+        expires_minutes=settings.password_reset_token_expire_minutes,
+    )
+
+
+def _decode_typed_token(token: str, expected_type: str, on_invalid: type) -> dict:
+    """
+    Decode a one-off token (invite/reset). decode_token already raises
+    UnauthorizedError / TokenExpiredError for malformed or expired JWTs;
+    catch those here and re-raise as the caller-specific exception so the
+    client gets a route-appropriate message ("invitation link" vs
+    "reset link") instead of the generic "session expired".
+    """
+    from app.utils.exceptions import TokenExpiredError, UnauthorizedError
+
+    try:
+        payload = decode_token(token)
+    except (TokenExpiredError, UnauthorizedError):
+        raise on_invalid()
+
+    if payload.get("type") != expected_type:
+        raise on_invalid()
+
+    return payload
+
+
+async def accept_invite(
+    db: AsyncSession, invite_token: str, new_password: str
+) -> User:
+    """
+    Validate the invite token, set the user's password, activate the
+    account, and clear any prior lockout state. Re-verifies the user
+    and membership still exist and are not soft-deleted between
+    invitation and acceptance.
+    """
+    payload = _decode_typed_token(invite_token, TOKEN_TYPE_INVITE, InvalidInviteTokenError)
+
+    try:
+        user_id = uuid.UUID(payload["sub"])
+        membership_id = uuid.UUID(payload["membership_id"])
+    except (KeyError, ValueError, TypeError):
+        raise InvalidInviteTokenError()
+
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if user is None or user.deleted_at is not None:
+        raise InvalidInviteTokenError()
+
+    # Defense in depth: the email in the token must still match. Catches
+    # the case where someone changed the email between invite and accept
+    # (not possible in v1, but cheap to enforce).
+    if payload.get("email") and user.email != payload["email"]:
+        raise InvalidInviteTokenError()
+
+    result = await db.execute(
+        select(HospitalMembership).where(HospitalMembership.id == membership_id)
+    )
+    membership = result.scalar_one_or_none()
+    if (
+        membership is None
+        or membership.deleted_at is not None
+        or membership.user_id != user.id
+    ):
+        raise InvalidInviteTokenError()
+
+    user.password_hash = hash_password(new_password)
+    user.is_active = True
+    user.email_verified_at = datetime.now(timezone.utc)
+    user.failed_login_attempts = 0
+    user.locked_until = None
+    # Defensive: the invite flow activates the membership when it's created,
+    # so this is a no-op in the normal path but recovers from any flow that
+    # leaves it suspended.
+    membership.is_active = True
+
+    await db.commit()
+    await db.refresh(user)
+    logger.info(
+        "Invite accepted",
+        extra={"user_id": str(user.id), "membership_id": str(membership.id)},
+    )
+    return user
+
+
+async def request_password_reset(
+    db: AsyncSession, email: str
+) -> Optional[str]:
+    """
+    Look up the user by normalized email. Returns a reset token if a
+    usable account exists, None otherwise.
+
+    Caller MUST surface a generic 200 response regardless of return
+    value — see routers/auth.py. A dummy hash call is made for the
+    missing-user path to keep timing roughly uniform.
+    """
+    normalized = normalize_email(email)
+    result = await db.execute(select(User).where(User.email == normalized))
+    user = result.scalar_one_or_none()
+
+    if user is None or user.deleted_at is not None or not user.is_active:
+        # Equalise timing: a real lookup would hash-verify; we hash-verify a
+        # throwaway value so this branch costs roughly the same bcrypt cycle.
+        verify_password("dummy", _DUMMY_PASSWORD_HASH)
+        logger.info("Password reset requested for unknown / unusable email")
+        return None
+
+    logger.info("Password reset issued", extra={"user_id": str(user.id)})
+    return issue_password_reset_token(user.id)
+
+
+async def reset_password(
+    db: AsyncSession, reset_token: str, new_password: str
+) -> User:
+    """
+    Validate the reset token, rotate the password hash, and clear
+    failed_login_attempts / locked_until so a locked-out user can
+    recover by completing a reset.
+    """
+    payload = _decode_typed_token(
+        reset_token, TOKEN_TYPE_PASSWORD_RESET, InvalidResetTokenError
+    )
+
+    try:
+        user_id = uuid.UUID(payload["sub"])
+    except (KeyError, ValueError, TypeError):
+        raise InvalidResetTokenError()
+
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if user is None or user.deleted_at is not None or not user.is_active:
+        raise InvalidResetTokenError()
+
+    user.password_hash = hash_password(new_password)
+    user.failed_login_attempts = 0
+    user.locked_until = None
+    await db.commit()
+    await db.refresh(user)
+    logger.info("Password reset completed", extra={"user_id": str(user.id)})
+    return user

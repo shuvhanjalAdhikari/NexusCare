@@ -1,11 +1,14 @@
 # ================================================================
 # NexusCare — app/schemas/auth.py
-# Login, workspace selection, token, and password change schemas.
+# Login, workspace selection, token, password change, invite,
+# and password-reset schemas.
 # ================================================================
 
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+
+from app.utils.email import normalize_email
 
 
 # ----------------------------------------------------------------
@@ -19,6 +22,11 @@ class LoginRequest(BaseModel):
     # but the explicit bound stops absurdly long strings before the validator runs.
     email: EmailStr = Field(max_length=150)
     password: str = Field(min_length=1)
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def _normalize_email(cls, v: str) -> str:
+        return normalize_email(v) if isinstance(v, str) else v
 
 
 # ----------------------------------------------------------------
@@ -79,3 +87,36 @@ class PasswordChangeRequest(BaseModel):
 
     current_password: str = Field(min_length=1)
     new_password: str = Field(min_length=8, max_length=128)
+
+
+# ----------------------------------------------------------------
+# INVITE ACCEPTANCE
+# ----------------------------------------------------------------
+
+class AcceptInviteRequest(BaseModel):
+    """Body for POST /auth/accept-invite. Sets the password for an invited user."""
+
+    invite_token: str = Field(min_length=1)
+    password: str = Field(min_length=8, max_length=128)
+
+
+# ----------------------------------------------------------------
+# PASSWORD RESET (self-service)
+# ----------------------------------------------------------------
+
+class ForgotPasswordRequest(BaseModel):
+    """Body for POST /auth/forgot-password. Always returns a generic 200."""
+
+    email: EmailStr = Field(max_length=150)
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def _normalize_email(cls, v: str) -> str:
+        return normalize_email(v) if isinstance(v, str) else v
+
+
+class ResetPasswordRequest(BaseModel):
+    """Body for POST /auth/reset-password."""
+
+    reset_token: str = Field(min_length=1)
+    password: str = Field(min_length=8, max_length=128)

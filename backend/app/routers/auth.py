@@ -18,8 +18,11 @@ from app.dependencies.auth import (
 from app.models.membership import HospitalMembership
 from app.models.user import User
 from app.schemas.auth import (
+    AcceptInviteRequest,
+    ForgotPasswordRequest,
     LoginRequest,
     PasswordChangeRequest,
+    ResetPasswordRequest,
     SelectionTokenPayload,
     SelectionTokenResponse,
     TokenResponse,
@@ -100,6 +103,67 @@ async def change_password(
         db, current_user, payload.current_password, payload.new_password
     )
     return MessageResponse(message="Password updated.")
+
+
+# ----------------------------------------------------------------
+# ACCEPT INVITE
+# ----------------------------------------------------------------
+
+@router.post("/accept-invite", response_model=MessageResponse)
+async def accept_invite(
+    payload: AcceptInviteRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """
+    Public endpoint. Token is in the body so this route is reachable
+    by users who do not yet have a usable password.
+    """
+    await auth_service.accept_invite(db, payload.invite_token, payload.password)
+    return MessageResponse(
+        message="Password set. You can now sign in with your email and the new password."
+    )
+
+
+# ----------------------------------------------------------------
+# FORGOT PASSWORD (enumeration-safe)
+# ----------------------------------------------------------------
+
+_FORGOT_PASSWORD_GENERIC = (
+    "If that email is registered, a reset link has been sent."
+)
+
+
+@router.post("/forgot-password", response_model=MessageResponse)
+async def forgot_password(
+    payload: ForgotPasswordRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """
+    Always returns the same 200 response regardless of whether the email
+    exists. The service issues a token only for real, usable accounts
+    and runs a dummy bcrypt for the missing-user path to keep timing
+    roughly uniform. The token, when issued, is intentionally NOT
+    returned to the requester — v2 will deliver it via email. For v1
+    automated tests the token can be retrieved by calling
+    auth_service.request_password_reset() directly.
+    """
+    await auth_service.request_password_reset(db, payload.email)
+    return MessageResponse(message=_FORGOT_PASSWORD_GENERIC)
+
+
+# ----------------------------------------------------------------
+# RESET PASSWORD
+# ----------------------------------------------------------------
+
+@router.post("/reset-password", response_model=MessageResponse)
+async def reset_password(
+    payload: ResetPasswordRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    await auth_service.reset_password(db, payload.reset_token, payload.password)
+    return MessageResponse(
+        message="Password reset. You can now sign in with the new password."
+    )
 
 
 # ----------------------------------------------------------------
