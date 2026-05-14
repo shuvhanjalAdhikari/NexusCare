@@ -244,6 +244,21 @@ class TokenExpiredError(UnauthorizedError):
         )
 
 
+class SelectionTokenRequiredError(UnauthorizedError):
+    """
+    Raised when the JWT 'type' claim does not match what the route expects.
+
+    A selection token presented to a protected route, or an access token
+    presented to /select-workspace, both surface as this error so attackers
+    cannot distinguish the two cases.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(
+            message="Invalid token for this operation. Please log in again."
+        )
+
+
 class InactiveUserError(ForbiddenError):
     """Raised when a deactivated user attempts to log in."""
 

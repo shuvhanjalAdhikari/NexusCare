@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     secret_key: str = "change-this-in-production"
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 480
+    selection_token_expire_minutes: int = 5
 
     class Config:
         env_file = str(_ENV_FILE)
