@@ -26,3 +26,17 @@ async def get_hospital_id(
     if membership.hospital.status == HospitalStatus.SUSPENDED.value:
         raise HospitalSuspendedError()
     return membership.hospital_id
+
+
+async def get_hospital_timezone(
+    membership: Annotated[HospitalMembership, Depends(get_current_membership)],
+) -> str:
+    """
+    Return this hospital's IANA timezone string (e.g. 'Asia/Kathmandu').
+
+    Used by the appointment/queue modules to anchor "today" and slot
+    generation to the hospital's local day rather than UTC. The column
+    is NOT NULL DEFAULT 'UTC' in the schema, so this never returns None;
+    an unrecognised value is tolerated and falls back to UTC downstream.
+    """
+    return membership.hospital.timezone

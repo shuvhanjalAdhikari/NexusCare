@@ -28,9 +28,10 @@ from app.dependencies.auth import (
     get_current_user,
     require_role,
 )
-from app.dependencies.hospital import get_hospital_id
+from app.dependencies.hospital import get_hospital_id, get_hospital_timezone
 from app.models.membership import HospitalMembership
 from app.models.user import User
+from app.schemas.appointment import SlotResponse
 from app.schemas.doctor import (
     DoctorCreate,
     DoctorListResponse,
@@ -46,7 +47,10 @@ from app.schemas.doctor import (
     ScheduleResponse,
     ScheduleUpdate,
 )
+from app.schemas.queue import TodayStatsResponse
 from app.services import doctor as doctor_service
+from app.services import queue as queue_service
+from app.services import slot as slot_service
 from app.utils.pagination import Pagination
 
 
@@ -367,3 +371,39 @@ async def delete_override(
     hospital_id: Annotated[uuid.UUID, Depends(get_hospital_id)],
 ):
     await doctor_service.delete_override(db, hospital_id, doctor_id, override_id)
+
+
+# ----------------------------------------------------------------
+# APPOINTMENT-FACING READ ENDPOINTS (Phase 7)
+# These live here — rather than under /api/v1/appointments — because
+# the URL is naturally nested under a doctor. The handlers delegate to
+# the slot / queue services.
+# ----------------------------------------------------------------
+
+@router.get("/{doctor_id}/available-slots", response_model=list[SlotResponse])
+async def get_available_slots(
+    doctor_id: uuid.UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    hospital_id: Annotated[uuid.UUID, Depends(get_hospital_id)],
+    _: Annotated[User, Depends(get_current_user)],
+    tz_name: Annotated[str, Depends(get_hospital_timezone)],
+    slot_date: Annotated[date, Query(alias="date", description="Date to list slots for (YYYY-MM-DD)")],
+):
+    """Free appointment slots for a doctor on a date, in the hospital's
+    local timezone. Empty when the doctor is on leave, the day is
+    blocked by an override, or there is no schedule for that weekday."""
+    return await slot_service.compute_available_slots(
+        db, hospital_id, doctor_id, slot_date, tz_name
+    )
+
+
+@router.get("/{doctor_id}/today-stats", response_model=TodayStatsResponse)
+async def get_today_stats(
+    doctor_id: uuid.UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    hospital_id: Annotated[uuid.UUID, Depends(get_hospital_id)],
+    _: Annotated[User, Depends(get_current_user)],
+    tz_name: Annotated[str, Depends(get_hospital_timezone)],
+):
+    """Per-doctor OPD counts for the hospital's current local day."""
+    return await queue_service.get_today_stats(db, hospital_id, doctor_id, tz_name)
