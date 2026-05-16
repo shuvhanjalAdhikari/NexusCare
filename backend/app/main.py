@@ -7,7 +7,9 @@ from app.routers.auth import router as auth_router
 from app.routers.doctors import router as doctors_router
 from app.routers.patients import router as patients_router
 from app.routers.queue import router as queue_router
+from app.routers.referrals import router as referrals_router
 from app.routers.users import roles_router, router as users_router
+from app.routers.visits import router as visits_router
 
 app = FastAPI(
     title="NexusCare OPD API",
@@ -31,6 +33,8 @@ app.include_router(patients_router)
 app.include_router(doctors_router)
 app.include_router(appointments_router)
 app.include_router(queue_router)
+app.include_router(visits_router)
+app.include_router(referrals_router)
 
 
 @app.get("/api/health")
