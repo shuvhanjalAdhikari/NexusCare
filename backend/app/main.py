@@ -5,7 +5,12 @@ from app.routers.admin import router as admin_router
 from app.routers.appointments import router as appointments_router
 from app.routers.auth import router as auth_router
 from app.routers.doctors import router as doctors_router
+from app.routers.drugs import inventory_router, router as drugs_router
 from app.routers.patients import router as patients_router
+from app.routers.prescriptions import (
+    router as prescriptions_router,
+    visit_prescriptions_router,
+)
 from app.routers.queue import router as queue_router
 from app.routers.referrals import router as referrals_router
 from app.routers.users import roles_router, router as users_router
@@ -35,6 +40,10 @@ app.include_router(appointments_router)
 app.include_router(queue_router)
 app.include_router(visits_router)
 app.include_router(referrals_router)
+app.include_router(drugs_router)
+app.include_router(inventory_router)
+app.include_router(prescriptions_router)
+app.include_router(visit_prescriptions_router)
 
 
 @app.get("/api/health")
