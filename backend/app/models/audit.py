@@ -30,8 +30,11 @@ class AuditLog(Base):
     __tablename__ = "audit_logs"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    hospital_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("hospitals.id"), nullable=False, index=True
+    # Nullable: login / login_failed / account_locked events occur before
+    # workspace selection and so carry no hospital context (see the
+    # audit_log_hardening migration, which drops the original NOT NULL).
+    hospital_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("hospitals.id"), nullable=True, index=True
     )
     user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=True

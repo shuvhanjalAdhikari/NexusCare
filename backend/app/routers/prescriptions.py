@@ -25,10 +25,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants.enums import PrescriptionStatus
 from app.database import get_db
+from app.dependencies.audit import get_request_metadata
 from app.dependencies.auth import get_current_membership, get_current_user
 from app.dependencies.hospital import get_hospital_id
 from app.models.membership import HospitalMembership
 from app.models.user import User
+from app.schemas.audit import RequestMetadata
 from app.schemas.prescription import (
     DispenseRequest,
     DispenseResultResponse,
@@ -139,6 +141,7 @@ async def update_prescription(
     hospital_id: Annotated[uuid.UUID, Depends(get_hospital_id)],
     current_user: Annotated[User, Depends(get_current_user)],
     membership: Annotated[HospitalMembership, Depends(get_current_membership)],
+    request_meta: Annotated[RequestMetadata, Depends(get_request_metadata)],
 ):
     """Partial update — notes and/or status (state-machine checked).
     status='dispensed' is rejected; it is set automatically once every
@@ -150,6 +153,7 @@ async def update_prescription(
         payload,
         updated_by=current_user.id,
         updated_by_membership_id=membership.id,
+        request_meta=request_meta,
     )
 
 
@@ -170,6 +174,7 @@ async def dispense_item(
     hospital_id: Annotated[uuid.UUID, Depends(get_hospital_id)],
     current_user: Annotated[User, Depends(get_current_user)],
     membership: Annotated[HospitalMembership, Depends(get_current_membership)],
+    request_meta: Annotated[RequestMetadata, Depends(get_request_metadata)],
 ):
     """Dispense a quantity of one prescription item against a drug
     batch. The prescription must be 'issued'. Stock is drawn from a
@@ -182,4 +187,5 @@ async def dispense_item(
         payload,
         dispensed_by=current_user.id,
         dispensed_by_membership_id=membership.id,
+        request_meta=request_meta,
     )

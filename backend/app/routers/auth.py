@@ -10,6 +10,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.dependencies.audit import get_request_metadata
 from app.dependencies.auth import (
     get_current_membership,
     get_current_user,
@@ -17,6 +18,7 @@ from app.dependencies.auth import (
 )
 from app.models.membership import HospitalMembership
 from app.models.user import User
+from app.schemas.audit import RequestMetadata
 from app.schemas.auth import (
     AcceptInviteRequest,
     ForgotPasswordRequest,
@@ -44,8 +46,11 @@ router = APIRouter(prefix="/api/v1/auth", tags=["Auth"])
 async def login(
     payload: LoginRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
+    request_meta: Annotated[RequestMetadata, Depends(get_request_metadata)],
 ):
-    user = await auth_service.authenticate_user(db, payload.email, payload.password)
+    user = await auth_service.authenticate_user(
+        db, payload.email, payload.password, request_meta=request_meta
+    )
     memberships = await auth_service.list_memberships(db, user.id)
     return SelectionTokenResponse(
         selection_token=auth_service.issue_selection_token(user),
@@ -57,13 +62,16 @@ async def login(
 async def login_form(
     form: Annotated[OAuth2PasswordRequestForm, Depends()],
     db: Annotated[AsyncSession, Depends(get_db)],
+    request_meta: Annotated[RequestMetadata, Depends(get_request_metadata)],
 ):
     """
     Form-encoded login for Swagger UI's Authorize button. The OAuth2
     password flow uses 'username' for the user identifier — we treat
     it as the email. Behaviour is otherwise identical to /login.
     """
-    user = await auth_service.authenticate_user(db, form.username, form.password)
+    user = await auth_service.authenticate_user(
+        db, form.username, form.password, request_meta=request_meta
+    )
     memberships = await auth_service.list_memberships(db, user.id)
     return SelectionTokenResponse(
         selection_token=auth_service.issue_selection_token(user),

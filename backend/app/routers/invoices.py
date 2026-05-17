@@ -24,10 +24,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants.enums import InvoiceStatus
 from app.database import get_db
+from app.dependencies.audit import get_request_metadata
 from app.dependencies.auth import get_current_membership, get_current_user
 from app.dependencies.hospital import get_hospital_id
 from app.models.membership import HospitalMembership
 from app.models.user import User
+from app.schemas.audit import RequestMetadata
 from app.schemas.invoice import (
     InvoiceCreate,
     InvoiceDetailResponse,
@@ -239,6 +241,7 @@ async def record_payment(
     hospital_id: Annotated[uuid.UUID, Depends(get_hospital_id)],
     current_user: Annotated[User, Depends(get_current_user)],
     membership: Annotated[HospitalMembership, Depends(get_current_membership)],
+    request_meta: Annotated[RequestMetadata, Depends(get_request_metadata)],
 ):
     """Record a payment (positive amount) or refund (negative amount)
     against an invoice. The invoice status is advanced automatically."""
@@ -249,6 +252,7 @@ async def record_payment(
         payload,
         recorded_by=current_user.id,
         recorded_by_membership_id=membership.id,
+        request_meta=request_meta,
     )
 
 

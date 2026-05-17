@@ -44,7 +44,9 @@ from sqlalchemy.orm import selectinload
 from app.constants.enums import PrescriptionStatus
 from app.models.prescription import Drug, Prescription, PrescriptionItem
 from app.models.visit import Visit
+from app.schemas.audit import RequestMetadata
 from app.schemas.prescription import PrescriptionCreate, PrescriptionUpdate
+from app.services import audit as audit_service
 from app.utils.exceptions import BadRequestError, NotFoundError
 from app.utils.pagination import make_paged_response, paginate
 
@@ -286,6 +288,7 @@ async def update_prescription(
     *,
     updated_by: uuid.UUID,
     updated_by_membership_id: uuid.UUID,
+    request_meta: Optional[RequestMetadata] = None,
 ) -> Prescription:
     """
     Partial update of a prescription's notes and/or status. A status
@@ -294,6 +297,10 @@ async def update_prescription(
 
     status='dispensed' is rejected — it is set automatically by the
     dispensing flow once every item is fully dispensed.
+
+    Audit: a transition to 'cancelled' writes a 'cancel_prescription'
+    audit row in the same transaction. Other transitions are not
+    audited in v1 (see services/audit.py deferred-TODO list).
     """
     prescription = await _load_prescription(db, hospital_id, prescription_id)
 
@@ -302,6 +309,7 @@ async def update_prescription(
 
     if new_status is not None and new_status.value != prescription.status:
         target = new_status.value
+        previous_status = prescription.status
         if target == PrescriptionStatus.DISPENSED.value:
             raise BadRequestError(
                 "Prescription status 'dispensed' is set automatically once "
@@ -326,6 +334,20 @@ async def update_prescription(
             and prescription.issued_at is None
         ):
             prescription.issued_at = datetime.now(timezone.utc)
+
+        if target == PrescriptionStatus.CANCELLED.value:
+            await audit_service.log_audit(
+                db,
+                action="cancel_prescription",
+                resource_type="prescription",
+                resource_id=prescription.id,
+                user_id=updated_by,
+                hospital_id=hospital_id,
+                membership_id=updated_by_membership_id,
+                old_value={"status": previous_status},
+                new_value={"status": target},
+                request_meta=request_meta,
+            )
 
     for field, value in data.items():
         setattr(prescription, field, value)

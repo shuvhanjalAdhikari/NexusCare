@@ -25,6 +25,7 @@ import logging
 import uuid
 from datetime import date, datetime, timedelta, timezone
 from decimal import ROUND_HALF_UP, Decimal
+from typing import Optional
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -32,7 +33,9 @@ from sqlalchemy.orm import selectinload
 
 from app.constants.enums import InvoiceStatus
 from app.models.billing import Invoice, Payment
+from app.schemas.audit import RequestMetadata
 from app.schemas.invoice import PaymentCreate
+from app.services import audit as audit_service
 from app.utils.exceptions import BadRequestError, NotFoundError
 
 logger = logging.getLogger(__name__)
@@ -89,6 +92,7 @@ async def record_payment(
     *,
     recorded_by: uuid.UUID,
     recorded_by_membership_id: uuid.UUID,
+    request_meta: Optional[RequestMetadata] = None,
 ) -> Payment:
     """
     Record a payment against an invoice. A positive amount is a
@@ -136,6 +140,8 @@ async def record_payment(
         recorded_by_membership_id=recorded_by_membership_id,
     )
     db.add(payment)
+    # Flush so payment.id is populated for the audit row below.
+    await db.flush()
 
     # Status update is driven by POSITIVE payments only.
     # Refunds reduce amount_paid but do not demote status. A 'paid'
@@ -151,6 +157,25 @@ async def record_payment(
 
     invoice.updated_by = recorded_by
     invoice.updated_by_membership_id = recorded_by_membership_id
+
+    # Audit row rides on the same commit as the payment insert and the
+    # invoice status change. amount is a Decimal — log_audit stringifies it.
+    await audit_service.log_audit(
+        db,
+        action="record_payment",
+        resource_type="invoice",
+        resource_id=invoice_id,
+        user_id=recorded_by,
+        hospital_id=hospital_id,
+        membership_id=recorded_by_membership_id,
+        new_value={
+            "amount": amount,
+            "method": payload.method.value,
+            "is_refund": amount < _ZERO,
+            "payment_id": payment.id,
+        },
+        request_meta=request_meta,
+    )
 
     await db.commit()
     await db.refresh(payment)

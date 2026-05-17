@@ -32,6 +32,7 @@ from app.constants.enums import UserRole
 from app.models.hospital import Role
 from app.models.membership import HospitalMembership
 from app.models.user import User
+from app.schemas.audit import RequestMetadata
 from app.schemas.user import (
     MembershipUpdateRequest,
     UserInviteRequest,
@@ -39,6 +40,7 @@ from app.schemas.user import (
     UserSelfUpdateRequest,
     UserUpdateRequest,
 )
+from app.services import audit as audit_service
 from app.services.auth import issue_invite_token
 from app.utils.email import normalize_email
 from app.utils.exceptions import (
@@ -457,12 +459,19 @@ async def soft_delete_membership(
     hospital_id: uuid.UUID,
     user_id: uuid.UUID,
     acting_user_id: uuid.UUID,
+    acting_membership_id: uuid.UUID,
+    request_meta: Optional[RequestMetadata] = None,
 ) -> None:
     """
     Soft-deletes the user's membership in this hospital. The global User
     row is NOT touched — they may be a member of other hospitals.
 
     Same self-removal + last-admin invariants as update_membership.
+
+    Audit: a 'deactivate_membership' row is written in the same
+    transaction. user_id / membership_id on the audit row identify the
+    ADMIN who performed the removal; the affected membership is the
+    resource_id.
     """
     membership = await _membership_in_hospital(db, hospital_id, user_id)
     if membership is None:
@@ -485,6 +494,20 @@ async def soft_delete_membership(
     else:
         membership.deleted_at = datetime.now(timezone.utc)
         membership.is_active = False
+
+    # Audit row rides on the same commit as the soft-delete.
+    await audit_service.log_audit(
+        db,
+        action="deactivate_membership",
+        resource_type="membership",
+        resource_id=membership.id,
+        user_id=acting_user_id,
+        hospital_id=hospital_id,
+        membership_id=acting_membership_id,
+        old_value={"is_active": True},
+        new_value={"is_active": False},
+        request_meta=request_meta,
+    )
 
     await db.commit()
     logger.info(

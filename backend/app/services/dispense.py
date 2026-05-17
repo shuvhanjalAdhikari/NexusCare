@@ -74,7 +74,9 @@ from app.models.prescription import (
     Prescription,
     PrescriptionItem,
 )
+from app.schemas.audit import RequestMetadata
 from app.schemas.prescription import DispenseRequest
+from app.services import audit as audit_service
 from app.utils.exceptions import (
     BadRequestError,
     InsufficientStockError,
@@ -171,6 +173,7 @@ async def dispense_item(
     *,
     dispensed_by: uuid.UUID,
     dispensed_by_membership_id: uuid.UUID,
+    request_meta: Optional[RequestMetadata] = None,
 ) -> dict:
     """
     Dispense a quantity of one prescription item against a drug batch.
@@ -293,6 +296,24 @@ async def dispense_item(
     )
     if all_fully_dispensed:
         prescription.status = PrescriptionStatus.DISPENSED.value
+
+    # Audit row rides on the same single commit as the stock deduction
+    # and the dispense log — a rolled-back dispense leaves no audit row.
+    await audit_service.log_audit(
+        db,
+        action="dispense",
+        resource_type="prescription_item",
+        resource_id=item_id,
+        user_id=dispensed_by,
+        hospital_id=hospital_id,
+        membership_id=dispensed_by_membership_id,
+        new_value={
+            "batch_id": batch.id,
+            "quantity": payload.quantity,
+            "dispense_log_id": log.id,
+        },
+        request_meta=request_meta,
+    )
 
     await db.commit()
     await db.refresh(log)

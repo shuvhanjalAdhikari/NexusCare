@@ -33,6 +33,8 @@ from app.constants.enums import HospitalStatus
 from app.models.hospital import Hospital, Role
 from app.models.membership import HospitalMembership
 from app.models.user import User
+from app.schemas.audit import RequestMetadata
+from app.services import audit as audit_service
 from app.utils.email import normalize_email
 from app.utils.exceptions import (
     InvalidCredentialsError,
@@ -79,13 +81,26 @@ TOKEN_TYPE_PASSWORD_RESET = "password_reset"
 # AUTHENTICATE
 # ----------------------------------------------------------------
 
-async def authenticate_user(db: AsyncSession, email: str, password: str) -> User:
+async def authenticate_user(
+    db: AsyncSession,
+    email: str,
+    password: str,
+    *,
+    request_meta: Optional[RequestMetadata] = None,
+) -> User:
     """
     Verify credentials. All failure modes raise the same
     InvalidCredentialsError with the same message: wrong email, wrong
     password, soft-deleted user, inactive user, locked account.
     Distinguishing them would leak account state to attackers
     performing user enumeration.
+
+    Audit: a successful verification writes a 'login' audit row; a wrong
+    password writes 'login_failed', plus 'account_locked' on the attempt
+    that trips the lockout threshold. All login audit rows have
+    hospital_id = NULL — login happens before workspace selection.
+    Unknown-email attempts are NOT audited (no account exists to attach
+    the event to, and auditing them would invite log-flooding).
     """
     result = await db.execute(
         select(User).where(User.email == email)
@@ -117,8 +132,35 @@ async def authenticate_user(db: AsyncSession, email: str, password: str) -> User
 
     if not password_ok:
         user.failed_login_attempts += 1
-        if user.failed_login_attempts >= LOCKOUT_THRESHOLD:
+        locked_now = user.failed_login_attempts >= LOCKOUT_THRESHOLD
+        if locked_now:
             user.locked_until = now + LOCKOUT_WINDOW
+        # Audit rows ride on the same commit as the counter increment.
+        await audit_service.log_audit(
+            db,
+            action="login_failed",
+            resource_type="user",
+            resource_id=user.id,
+            user_id=user.id,
+            new_value={
+                "reason": "wrong_password",
+                "failed_login_attempts": user.failed_login_attempts,
+            },
+            request_meta=request_meta,
+        )
+        if locked_now:
+            await audit_service.log_audit(
+                db,
+                action="account_locked",
+                resource_type="user",
+                resource_id=user.id,
+                user_id=user.id,
+                new_value={
+                    "failed_login_attempts": user.failed_login_attempts,
+                    "locked_until": user.locked_until,
+                },
+                request_meta=request_meta,
+            )
         await db.commit()
         logger.warning(
             "Login failed: wrong password",
@@ -144,7 +186,19 @@ async def authenticate_user(db: AsyncSession, email: str, password: str) -> User
     if user.failed_login_attempts != 0 or user.locked_until is not None:
         user.failed_login_attempts = 0
         user.locked_until = None
-        await db.commit()
+
+    # 'login' audit row — hospital_id / membership_id are NULL because
+    # workspace selection has not happened yet. Committed unconditionally
+    # now (the counter reset above may or may not have dirtied the row).
+    await audit_service.log_audit(
+        db,
+        action="login",
+        resource_type="user",
+        resource_id=user.id,
+        user_id=user.id,
+        request_meta=request_meta,
+    )
+    await db.commit()
 
     return user
 
