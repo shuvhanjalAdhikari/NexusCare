@@ -7,11 +7,20 @@ from app.routers.auth import router as auth_router
 from app.routers.billing import router as billing_router
 from app.routers.doctors import router as doctors_router
 from app.routers.drugs import inventory_router, router as drugs_router
+from app.routers.feedback import router as feedback_router
+from app.routers.followups import (
+    router as followups_router,
+    visit_followups_router,
+)
 from app.routers.invoices import router as invoices_router
 from app.routers.labs import (
     lab_tests_router,
     router as lab_orders_router,
     visit_lab_orders_router,
+)
+from app.routers.notifications import (
+    admin_router as notifications_admin_router,
+    router as notifications_router,
 )
 from app.routers.patients import router as patients_router
 from app.routers.prescriptions import (
@@ -56,6 +65,11 @@ app.include_router(lab_orders_router)
 app.include_router(visit_lab_orders_router)
 app.include_router(invoices_router)
 app.include_router(billing_router)
+app.include_router(notifications_router)
+app.include_router(notifications_admin_router)
+app.include_router(followups_router)
+app.include_router(visit_followups_router)
+app.include_router(feedback_router)
 
 
 @app.get("/api/health")
