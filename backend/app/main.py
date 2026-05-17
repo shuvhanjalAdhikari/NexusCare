@@ -1,6 +1,6 @@
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 
+from app.middleware.cors import add_cors_middleware
 from app.routers.admin import router as admin_router
 from app.routers.appointments import router as appointments_router
 from app.routers.audit import router as audit_router
@@ -39,13 +39,10 @@ app = FastAPI(
     docs_url="/api/docs"
 )
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:5173"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# CORS is registered first so it wraps every route — browsers must be
+# able to call the API from the frontend's origin. See
+# app/middleware/cors.py.
+add_cors_middleware(app)
 
 app.include_router(auth_router)
 app.include_router(admin_router)
