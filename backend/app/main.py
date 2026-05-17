@@ -6,6 +6,11 @@ from app.routers.appointments import router as appointments_router
 from app.routers.auth import router as auth_router
 from app.routers.doctors import router as doctors_router
 from app.routers.drugs import inventory_router, router as drugs_router
+from app.routers.labs import (
+    lab_tests_router,
+    router as lab_orders_router,
+    visit_lab_orders_router,
+)
 from app.routers.patients import router as patients_router
 from app.routers.prescriptions import (
     router as prescriptions_router,
@@ -44,6 +49,9 @@ app.include_router(drugs_router)
 app.include_router(inventory_router)
 app.include_router(prescriptions_router)
 app.include_router(visit_prescriptions_router)
+app.include_router(lab_tests_router)
+app.include_router(lab_orders_router)
+app.include_router(visit_lab_orders_router)
 
 
 @app.get("/api/health")

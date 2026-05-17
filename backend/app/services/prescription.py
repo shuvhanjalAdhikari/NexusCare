@@ -209,6 +209,12 @@ async def create_prescription(
     Every referenced drug is verified to belong to this hospital; an
     inactive drug cannot be referenced by a new prescription item.
     """
+    # TODO (future hardening phase): this only checks the visit exists
+    # and is not soft-deleted — it does NOT verify the visit's status.
+    # A prescription can currently be created against a 'closed' or
+    # 'cancelled' visit. Phase 10's create_lab_order enforces visit
+    # status ∈ {active, completed}; prescriptions should adopt the same
+    # check. Not fixed here to keep Phase 10 scoped to lab orders.
     visit_result = await db.execute(
         select(Visit).where(
             Visit.id == visit_id,
