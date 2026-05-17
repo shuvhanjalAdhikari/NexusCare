@@ -14,6 +14,7 @@
 # ================================================================
 
 from datetime import datetime
+from decimal import Decimal
 from typing import Optional
 from uuid import UUID
 
@@ -35,6 +36,7 @@ class LabTestBase(BaseModel):
     tat_hours: Optional[int] = Field(default=None, ge=0)
     reference_range: Optional[str] = None
     unit: Optional[str] = Field(default=None, max_length=40)
+    price: Optional[Decimal] = Field(default=None, ge=0, decimal_places=2)
 
 
 class LabTestCreate(LabTestBase):
@@ -56,6 +58,7 @@ class LabTestUpdate(BaseModel):
     tat_hours: Optional[int] = Field(default=None, ge=0)
     reference_range: Optional[str] = None
     unit: Optional[str] = Field(default=None, max_length=40)
+    price: Optional[Decimal] = Field(default=None, ge=0, decimal_places=2)
     is_active: Optional[bool] = None
 
 

@@ -496,6 +496,7 @@ CREATE TABLE lab_tests (
   tat_hours       SMALLINT,
   reference_range TEXT,
   unit            VARCHAR(40),
+  price           NUMERIC(10,2),
   is_active       BOOLEAN NOT NULL DEFAULT true,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()

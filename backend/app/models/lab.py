@@ -7,9 +7,10 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from decimal import Decimal
 from typing import TYPE_CHECKING, Optional
 
-from sqlalchemy import Boolean, ForeignKey, SmallInteger, String, Text
+from sqlalchemy import Boolean, ForeignKey, Numeric, SmallInteger, String, Text
 from sqlalchemy.dialects.postgresql import TIMESTAMP, UUID
 
 TIMESTAMPTZ = TIMESTAMP(timezone=True)
@@ -39,6 +40,7 @@ class LabTest(Base):
     tat_hours: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
     reference_range: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     unit: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
+    price: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 2), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
     created_at: Mapped[datetime] = mapped_column(TIMESTAMPTZ, nullable=False, server_default="now()")
     updated_at: Mapped[datetime] = mapped_column(TIMESTAMPTZ, nullable=False, server_default="now()")
