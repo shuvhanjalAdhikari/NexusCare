@@ -50,8 +50,9 @@
 # right place to capture it.
 #
 # ----------------------------------------------------------------
-# WIRED AUDIT POINTS (Phase 13)
+# WIRED AUDIT POINTS
 # ----------------------------------------------------------------
+# Phase 13:
 #   login                  — services/auth.py:authenticate_user
 #   login_failed           — services/auth.py:authenticate_user
 #   account_locked         — services/auth.py:authenticate_user
@@ -59,10 +60,12 @@
 #   record_payment         — services/payment.py:record_payment
 #   deactivate_membership  — services/user.py:soft_delete_membership
 #   cancel_prescription    — services/prescription.py:update_prescription
-#
-# TODO (deferred to a future phase — intentionally NOT wired in v1 to
-# avoid scope creep): patient soft-delete, doctor deactivation,
-# invoice cancellation, role changes, password resets.
+# Phase 14:
+#   delete_patient         — services/patient.py:soft_delete_patient
+#   deactivate_doctor      — services/doctor.py:deactivate_doctor
+#   cancel_invoice         — services/invoice.py:update_invoice
+#   change_role            — services/user.py:update_membership
+#   reset_password         — services/auth.py:reset_password
 #
 # TODO (v2 — retention): audit logs are NEVER deleted in v1. A future
 # data-retention policy (e.g. purge rows older than 7 years for legal

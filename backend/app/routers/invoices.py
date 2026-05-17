@@ -126,6 +126,7 @@ async def update_invoice(
     hospital_id: Annotated[uuid.UUID, Depends(get_hospital_id)],
     current_user: Annotated[User, Depends(get_current_user)],
     membership: Annotated[HospitalMembership, Depends(get_current_membership)],
+    request_meta: Annotated[RequestMetadata, Depends(get_request_metadata)],
 ):
     """Partial update — status (state-machine checked) and, while still
     'draft', discount_amount / tax_amount / due_date."""
@@ -136,6 +137,7 @@ async def update_invoice(
         payload,
         updated_by=current_user.id,
         updated_by_membership_id=membership.id,
+        request_meta=request_meta,
     )
 
 

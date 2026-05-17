@@ -41,7 +41,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.constants.enums import PrescriptionStatus
+from app.constants.enums import PrescriptionStatus, VisitStatus
 from app.models.prescription import Drug, Prescription, PrescriptionItem
 from app.models.visit import Visit
 from app.schemas.audit import RequestMetadata
@@ -71,6 +71,16 @@ _PRESCRIPTION_TRANSITIONS: dict[str, set[str]] = {
     },
     PrescriptionStatus.DISPENSED.value: set(),
     PrescriptionStatus.CANCELLED.value: set(),
+}
+
+
+# Visit statuses against which a new prescription may be created. A
+# 'waiting' visit has no consultation under way; a 'closed' visit is a
+# finalized record; a 'cancelled' visit never happened. Mirrors
+# services/lab.py::create_lab_order (Phase 14 — closes the Phase 9 gap).
+_PRESCRIBABLE_VISIT_STATUSES = {
+    VisitStatus.ACTIVE.value,
+    VisitStatus.COMPLETED.value,
 }
 
 
@@ -211,12 +221,9 @@ async def create_prescription(
     Every referenced drug is verified to belong to this hospital; an
     inactive drug cannot be referenced by a new prescription item.
     """
-    # TODO (future hardening phase): this only checks the visit exists
-    # and is not soft-deleted — it does NOT verify the visit's status.
-    # A prescription can currently be created against a 'closed' or
-    # 'cancelled' visit. Phase 10's create_lab_order enforces visit
-    # status ∈ {active, completed}; prescriptions should adopt the same
-    # check. Not fixed here to keep Phase 10 scoped to lab orders.
+    # The visit must exist within the tenant, not be soft-deleted, and
+    # be in a status that admits new clinical orders. This check runs
+    # before any drug validation — same rule as create_lab_order.
     visit_result = await db.execute(
         select(Visit).where(
             Visit.id == visit_id,
@@ -227,6 +234,11 @@ async def create_prescription(
     visit = visit_result.scalar_one_or_none()
     if visit is None:
         raise NotFoundError("Visit", visit_id)
+    if visit.status not in _PRESCRIBABLE_VISIT_STATUSES:
+        raise BadRequestError(
+            f"Cannot create a prescription on a visit with status "
+            f"'{visit.status}'. The visit must be active or completed."
+        )
 
     drug_ids = {item.drug_id for item in payload.items}
     drug_result = await db.execute(

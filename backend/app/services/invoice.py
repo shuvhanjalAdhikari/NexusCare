@@ -74,12 +74,14 @@ from app.models.lab import LabOrder, LabTest
 from app.models.patient import Patient
 from app.models.prescription import Drug, Prescription, PrescriptionItem
 from app.models.visit import Visit
+from app.schemas.audit import RequestMetadata
 from app.schemas.invoice import (
     InvoiceCreate,
     InvoiceItemCreate,
     InvoiceItemUpdate,
     InvoiceUpdate,
 )
+from app.services import audit as audit_service
 from app.utils.exceptions import BadRequestError, NotFoundError
 from app.utils.pagination import make_paged_response, paginate
 
@@ -510,12 +512,16 @@ async def update_invoice(
     *,
     updated_by: uuid.UUID,
     updated_by_membership_id: uuid.UUID,
+    request_meta: Optional[RequestMetadata] = None,
 ) -> Invoice:
     """
     Partial update of an invoice. status moves along the invoice state
     machine; 'partial' / 'paid' are payment-driven and rejected here.
     discount_amount / tax_amount / due_date may only be changed while
     the invoice is still 'draft' (after that the line items are locked).
+
+    Audit: a transition to 'void' writes a 'cancel_invoice' audit row in
+    the same transaction. Other transitions are not audited in v1.
     """
     invoice = await _load_invoice(db, hospital_id, invoice_id, with_relations=True)
 
@@ -548,6 +554,7 @@ async def update_invoice(
 
     if new_status is not None and new_status.value != invoice.status:
         target = new_status.value
+        previous_status = invoice.status
         if target in _PAYMENT_DRIVEN_STATUSES:
             raise BadRequestError(
                 f"Invoice status '{target}' is set automatically when "
@@ -567,6 +574,20 @@ async def update_invoice(
                 f"to '{target}'."
             )
         invoice.status = target
+
+        if target == InvoiceStatus.VOID.value:
+            await audit_service.log_audit(
+                db,
+                action="cancel_invoice",
+                resource_type="invoice",
+                resource_id=invoice.id,
+                user_id=updated_by,
+                hospital_id=hospital_id,
+                membership_id=updated_by_membership_id,
+                old_value={"status": previous_status},
+                new_value={"status": InvoiceStatus.VOID.value},
+                request_meta=request_meta,
+            )
 
     invoice.updated_by = updated_by
     invoice.updated_by_membership_id = updated_by_membership_id

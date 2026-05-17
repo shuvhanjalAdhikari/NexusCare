@@ -50,6 +50,7 @@ from app.models.doctor import (
 from app.models.hospital import Role
 from app.models.membership import HospitalMembership
 from app.models.user import User
+from app.schemas.audit import RequestMetadata
 from app.schemas.doctor import (
     DoctorCreate,
     DoctorUpdate,
@@ -60,6 +61,7 @@ from app.schemas.doctor import (
     ScheduleCreate,
     ScheduleUpdate,
 )
+from app.services import audit as audit_service
 from app.utils.exceptions import (
     BadRequestError,
     ConflictError,
@@ -348,10 +350,28 @@ async def deactivate_doctor(
     db: AsyncSession,
     hospital_id: uuid.UUID,
     doctor_id: uuid.UUID,
+    *,
+    acting_user_id: uuid.UUID,
+    acting_membership_id: uuid.UUID,
+    request_meta: Optional[RequestMetadata] = None,
 ) -> None:
-    """Flip is_active=False. The row is preserved; reactivate via PATCH."""
+    """Flip is_active=False. The row is preserved; reactivate via PATCH.
+
+    Audit: a 'deactivate_doctor' row is written in the same transaction."""
     doctor = await _load_doctor(db, hospital_id, doctor_id)
     doctor.is_active = False
+    await audit_service.log_audit(
+        db,
+        action="deactivate_doctor",
+        resource_type="doctor_profile",
+        resource_id=doctor_id,
+        user_id=acting_user_id,
+        hospital_id=hospital_id,
+        membership_id=acting_membership_id,
+        old_value={"is_active": True},
+        new_value={"is_active": False},
+        request_meta=request_meta,
+    )
     await db.commit()
     logger.info(
         "Doctor deactivated",

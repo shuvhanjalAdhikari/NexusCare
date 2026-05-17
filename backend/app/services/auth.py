@@ -526,12 +526,20 @@ async def request_password_reset(
 
 
 async def reset_password(
-    db: AsyncSession, reset_token: str, new_password: str
+    db: AsyncSession,
+    reset_token: str,
+    new_password: str,
+    *,
+    request_meta: Optional[RequestMetadata] = None,
 ) -> User:
     """
     Validate the reset token, rotate the password hash, and clear
     failed_login_attempts / locked_until so a locked-out user can
     recover by completing a reset.
+
+    Audit: a 'reset_password' row is written in the same transaction.
+    Like login events it carries hospital_id = NULL — a password reset
+    happens with no workspace context.
     """
     payload = _decode_typed_token(
         reset_token, TOKEN_TYPE_PASSWORD_RESET, InvalidResetTokenError
@@ -550,6 +558,15 @@ async def reset_password(
     user.password_hash = hash_password(new_password)
     user.failed_login_attempts = 0
     user.locked_until = None
+    await audit_service.log_audit(
+        db,
+        action="reset_password",
+        resource_type="user",
+        resource_id=user.id,
+        user_id=user.id,
+        new_value={"reset_via": "token"},
+        request_meta=request_meta,
+    )
     await db.commit()
     await db.refresh(user)
     logger.info("Password reset completed", extra={"user_id": str(user.id)})

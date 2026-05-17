@@ -156,9 +156,17 @@ async def update_membership(
     db: Annotated[AsyncSession, Depends(get_db)],
     hospital_id: Annotated[uuid.UUID, Depends(get_hospital_id)],
     current_user: Annotated[User, Depends(get_current_user)],
+    membership: Annotated[HospitalMembership, Depends(get_current_membership)],
+    request_meta: Annotated[RequestMetadata, Depends(get_request_metadata)],
 ):
     await user_service.update_membership(
-        db, hospital_id, user_id, payload, current_user.id
+        db,
+        hospital_id,
+        user_id,
+        payload,
+        current_user.id,
+        membership.id,
+        request_meta=request_meta,
     )
     return MessageResponse(message="Membership updated.")
 

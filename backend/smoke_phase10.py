@@ -631,6 +631,7 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
+    sys.stdout.reconfigure(encoding="utf-8")
     try:
         asyncio.run(main())
     except SystemExit as e:

@@ -13,9 +13,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants.enums import Gender
 from app.database import get_db
-from app.dependencies.auth import get_current_user
+from app.dependencies.audit import get_request_metadata
+from app.dependencies.auth import get_current_membership, get_current_user
 from app.dependencies.hospital import get_hospital_id
+from app.models.membership import HospitalMembership
 from app.models.user import User
+from app.schemas.audit import RequestMetadata
 from app.schemas.patient import (
     AllergyCreate,
     AllergyResponse,
@@ -125,9 +128,18 @@ async def delete_patient(
     patient_id: uuid.UUID,
     db: Annotated[AsyncSession, Depends(get_db)],
     hospital_id: Annotated[uuid.UUID, Depends(get_hospital_id)],
-    _: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(get_current_user)],
+    membership: Annotated[HospitalMembership, Depends(get_current_membership)],
+    request_meta: Annotated[RequestMetadata, Depends(get_request_metadata)],
 ):
-    await patient_service.soft_delete_patient(db, hospital_id, patient_id)
+    await patient_service.soft_delete_patient(
+        db,
+        hospital_id,
+        patient_id,
+        acting_user_id=current_user.id,
+        acting_membership_id=membership.id,
+        request_meta=request_meta,
+    )
 
 
 # ----------------------------------------------------------------

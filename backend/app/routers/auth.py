@@ -167,8 +167,11 @@ async def forgot_password(
 async def reset_password(
     payload: ResetPasswordRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
+    request_meta: Annotated[RequestMetadata, Depends(get_request_metadata)],
 ):
-    await auth_service.reset_password(db, payload.reset_token, payload.password)
+    await auth_service.reset_password(
+        db, payload.reset_token, payload.password, request_meta=request_meta
+    )
     return MessageResponse(
         message="Password reset. You can now sign in with the new password."
     )

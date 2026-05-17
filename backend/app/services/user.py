@@ -388,6 +388,8 @@ async def update_membership(
     user_id: uuid.UUID,
     payload: MembershipUpdateRequest,
     acting_user_id: uuid.UUID,
+    acting_membership_id: uuid.UUID,
+    request_meta: Optional[RequestMetadata] = None,
 ) -> HospitalMembership:
     """
     Change a membership's role and/or active flag.
@@ -398,10 +400,16 @@ async def update_membership(
       * The hospital must always have at least one active hospital_admin
         membership. Soft guard — a future DB trigger could harden this
         against concurrent admin removals.
+
+    Audit: when role_id actually changes, a 'change_role' row is written
+    in the same transaction. user_id / membership_id on the audit row
+    identify the ADMIN who performed the change.
     """
     membership = await _membership_in_hospital(db, hospital_id, user_id)
     if membership is None:
         raise NotFoundError("User", user_id)
+
+    old_role_id = membership.role_id
 
     if payload.role_id is None and payload.is_active is None:
         # Nothing to do; surface this loudly rather than silently no-op.
@@ -439,6 +447,21 @@ async def update_membership(
         await db.rollback()
         raise BadRequestError(
             "This hospital must have at least one active administrator."
+        )
+
+    # Audit a real role swap — rides on the same commit as the change.
+    if payload.role_id is not None and membership.role_id != old_role_id:
+        await audit_service.log_audit(
+            db,
+            action="change_role",
+            resource_type="membership",
+            resource_id=membership.id,
+            user_id=acting_user_id,
+            hospital_id=hospital_id,
+            membership_id=acting_membership_id,
+            old_value={"role_id": old_role_id},
+            new_value={"role_id": membership.role_id},
+            request_meta=request_meta,
         )
 
     await db.commit()

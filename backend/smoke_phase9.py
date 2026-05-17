@@ -315,7 +315,16 @@ async def main() -> None:
             )
             assert r.status_code == 201, f"create visit: {r.text[:200]}"
             visit_a = r.json()["id"]
-            await _say(True, "1. hospital A + doctor + patient + visit ready")
+            # Phase 14: prescriptions require the visit to be active or
+            # completed. A new visit opens in 'waiting', so move it to
+            # 'active' before the prescription steps below.
+            r = await c.patch(
+                f"/api/v1/visits/{visit_a}",
+                json={"status": "active"},
+                headers=hdrs_a,
+            )
+            assert r.status_code == 200, f"activate visit: {r.text[:200]}"
+            await _say(True, "1. hospital A + doctor + patient + active visit ready")
 
             # ============================================================
             # 2. Drug CRUD
@@ -706,6 +715,7 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
+    sys.stdout.reconfigure(encoding="utf-8")
     try:
         asyncio.run(main())
     except SystemExit as e:

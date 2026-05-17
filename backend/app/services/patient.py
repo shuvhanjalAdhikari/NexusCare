@@ -34,12 +34,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.patient import Patient, PatientAllergy
+from app.schemas.audit import RequestMetadata
 from app.schemas.patient import (
     AllergyCreate,
     AllergyUpdate,
     PatientCreate,
     PatientUpdate,
 )
+from app.services import audit as audit_service
 from app.utils.exceptions import NotFoundError, ServerError
 from app.utils.pagination import make_paged_response, paginate
 
@@ -243,12 +245,38 @@ async def update_patient(
 
 
 async def soft_delete_patient(
-    db: AsyncSession, hospital_id: uuid.UUID, patient_id: uuid.UUID
+    db: AsyncSession,
+    hospital_id: uuid.UUID,
+    patient_id: uuid.UUID,
+    *,
+    acting_user_id: uuid.UUID,
+    acting_membership_id: uuid.UUID,
+    request_meta: Optional[RequestMetadata] = None,
 ) -> None:
-    """Soft-delete: stamp deleted_at + flip is_active. Row remains in DB."""
+    """Soft-delete: stamp deleted_at + flip is_active. Row remains in DB.
+
+    Audit: a 'delete_patient' row is written in the same transaction,
+    capturing the patient's key identifying fields before deletion."""
     patient = await get_patient(db, hospital_id, patient_id)
+    old_value = {
+        "patient_number": patient.patient_number,
+        "first_name": patient.first_name,
+        "last_name": patient.last_name,
+        "is_active": patient.is_active,
+    }
     patient.deleted_at = datetime.now(timezone.utc)
     patient.is_active = False
+    await audit_service.log_audit(
+        db,
+        action="delete_patient",
+        resource_type="patient",
+        resource_id=patient_id,
+        user_id=acting_user_id,
+        hospital_id=hospital_id,
+        membership_id=acting_membership_id,
+        old_value=old_value,
+        request_meta=request_meta,
+    )
     await db.commit()
     logger.info(
         "Patient soft-deleted",
